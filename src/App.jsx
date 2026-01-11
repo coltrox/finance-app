@@ -1,175 +1,173 @@
 import React, { useState, useEffect } from 'react';
-import { 
-  Wallet, TrendingUp, TrendingDown, Trash2, 
-  Plus, Calendar, Layers, BarChart3 
-} from 'lucide-react';
-import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell, PieChart, Pie } from 'recharts';
+import { Wallet, Trash2, FileDown, Plus, TrendingUp, TrendingDown, Layers, Calendar } from 'lucide-react';
+import { BarChart, Bar, XAxis, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
 import './App.css';
 
+const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+
 function App() {
-  const [items, setItems] = useState(() => {
-    const saved = localStorage.getItem('finance_v3');
+  const [data, setData] = useState(() => {
+    const saved = localStorage.getItem('finance_pro_v6');
     return saved ? JSON.parse(saved) : [];
   });
 
-  const [form, setForm] = useState({ desc: '', val: '', type: 'income' });
+  const [selectedMonth, setSelectedMonth] = useState(new Date().getMonth());
+  const [selectedYear] = useState(new Date().getFullYear());
+  const [form, setForm] = useState({ desc: '', val: '', type: 'income', date: new Date().toISOString().split('T')[0] });
 
   useEffect(() => {
-    localStorage.setItem('finance_v3', JSON.stringify(items));
-  }, [items]);
+    localStorage.setItem('finance_pro_v6', JSON.stringify(data));
+  }, [data]);
 
-  const handleAdd = (e) => {
+  const addTransaction = (e) => {
     e.preventDefault();
     if (!form.desc || !form.val) return;
-    const n = { ...form, id: Date.now(), val: parseFloat(form.val), date: new Date().toLocaleDateString('pt-BR') };
-    setItems([n, ...items]);
+    const newItem = { ...form, id: Date.now(), val: parseFloat(form.val) };
+    setData([newItem, ...data]);
     setForm({ ...form, desc: '', val: '' });
   };
 
-  const removeItem = (id) => setItems(items.filter(i => i.id !== id));
+  const deleteItem = (id) => setData(data.filter(i => i.id !== id));
 
-  // Cálculos
-  const incomeItems = items.filter(i => i.type === 'income');
-  const expenseItems = items.filter(i => i.type === 'expense');
-  const fixedItems = items.filter(i => i.type === 'fixed');
+  // Filtros
+  const filteredData = data.filter(item => {
+    const d = new Date(item.date);
+    return d.getMonth() === selectedMonth && d.getFullYear() === selectedYear;
+  });
 
-  const totIn = incomeItems.reduce((a, b) => a + b.val, 0);
-  const totOut = expenseItems.reduce((a, b) => a + b.val, 0);
-  const totFix = fixedItems.reduce((a, b) => a + b.val, 0);
+  const totIn = filteredData.filter(i => i.type === 'income').reduce((a, b) => a + b.val, 0);
+  const totOut = filteredData.filter(i => i.type === 'expense').reduce((a, b) => a + b.val, 0);
+  const totFix = filteredData.filter(i => i.type === 'fixed').reduce((a, b) => a + b.val, 0);
   const balance = totIn - (totOut + totFix);
 
   const chartData = [
-    { name: 'Ganhos', value: totIn, color: '#10b981' },
-    { name: 'Variáveis', value: totOut, color: '#ef4444' },
-    { name: 'Fixas', value: totFix, color: '#8b5cf6' }
+    { name: 'Ganhos', v: totIn, c: '#10b981' },
+    { name: 'Gastos', v: totOut, c: '#ef4444' },
+    { name: 'Fixas', v: totFix, c: '#8b5cf6' }
   ];
 
+  const exportPDF = () => {
+    const doc = new jsPDF();
+    doc.setFontSize(20);
+    doc.text(`Relatorio Financeiro - ${MESES[selectedMonth]} / ${selectedYear}`, 14, 20);
+    doc.setFontSize(12);
+    doc.text(`Saldo Final: R$ ${balance.toLocaleString('pt-BR')}`, 14, 30);
+    
+    const rows = filteredData.map(i => [
+      new Date(i.date).toLocaleDateString('pt-BR'),
+      i.desc,
+      i.type.toUpperCase(),
+      `R$ ${i.val.toLocaleString('pt-BR')}`
+    ]);
+
+    autoTable(doc, {
+      startY: 40,
+      head: [['Data', 'Descricao', 'Tipo', 'Valor']],
+      body: rows,
+      headStyles: { fillColor: [79, 70, 229] }
+    });
+    doc.save(`financeiro-${MESES[selectedMonth]}.pdf`);
+  };
+
   return (
-    <div className="dashboard">
-      {/* PAINEL LATERAL DE CONTROLE */}
-      <aside className="sidebar-input">
-        <div className="brand">
-          <Wallet size={32} />
-          <span>Finance.hub</span>
+    <div className="dashboard-layout">
+      <aside className="entry-sidebar">
+        <div className="brand-title"><Wallet size={30} /> Finance.io</div>
+        
+        <span className="label-mini">Filtrar por Mês</span>
+        <div className="month-grid">
+          {MESES.map((m, idx) => (
+            <button key={m} onClick={() => setSelectedMonth(idx)} className={`month-btn ${selectedMonth === idx ? 'active' : ''}`}>{m}</button>
+          ))}
         </div>
 
-        <form onSubmit={handleAdd}>
-          <div className="form-group">
-            <label>O QUE FOI LANÇADO?</label>
-            <input 
-              type="text" 
-              placeholder="Ex: Salário, Aluguel, Mercado" 
-              value={form.desc}
-              onChange={e => setForm({...form, desc: e.target.value})}
-            />
-          </div>
-
-          <div className="form-group">
-            <label>VALOR (R$)</label>
-            <input 
-              type="number" 
-              step="0.01"
-              placeholder="0,00"
-              value={form.val}
-              onChange={e => setForm({...form, val: e.target.value})}
-            />
-          </div>
-
-          <label className="form-group label">CATEGORIA DO LANÇAMENTO</label>
-          <div className="category-toggle">
-            <button type="button" onClick={()=>setForm({...form, type: 'income'})} className={`cat-btn btn-in ${form.type === 'income' ? 'active' : ''}`}>GANHO</button>
-            <button type="button" onClick={()=>setForm({...form, type: 'expense'})} className={`cat-btn btn-out ${form.type === 'expense' ? 'active' : ''}`}>GASTO</button>
-            <button type="button" onClick={()=>setForm({...form, type: 'fixed'})} className={`cat-btn btn-fix ${form.type === 'fixed' ? 'active' : ''}`}>FIXA</button>
-          </div>
-
-          <button type="submit" style={{width: '100%', padding: '16px', background: 'var(--primary)', color: '#fff', border: 'none', borderRadius: '12px', fontWeight: 'bold', cursor: 'pointer', fontSize: '15px'}}>
-            Confirmar e Adicionar
-          </button>
-        </form>
-
-        <div style={{marginTop: '40px', background: '#f8fafc', padding: '20px', borderRadius: '16px', border: '1px solid #e5e7eb'}}>
-          <h4 style={{margin: '0 0 15px 0', fontSize: '12px', color: 'var(--text-secondary)'}}>VISUALIZAÇÃO RÁPIDA</h4>
-          <div style={{height: 150}}>
-            <ResponsiveContainer width="100%" height="100%">
-              <PieChart>
-                <Pie data={chartData} innerRadius={40} outerRadius={60} paddingAngle={5} dataKey="value">
-                  {chartData.map((entry, index) => <Cell key={index} fill={entry.color} />)}
-                </Pie>
-                <Tooltip />
-              </PieChart>
-            </ResponsiveContainer>
-          </div>
+        <div className="input-card">
+          <form onSubmit={addTransaction}>
+            <label className="label-mini">O que é?</label>
+            <input className="main-input" value={form.desc} onChange={e => setForm({...form, desc: e.target.value})} placeholder="Ex: Salário" />
+            <label className="label-mini">Valor (R$)</label>
+            <input className="main-input" type="number" step="0.01" value={form.val} onChange={e => setForm({...form, val: e.target.value})} placeholder="0,00" />
+            <label className="label-mini">Data</label>
+            <input className="main-input" type="date" value={form.date} onChange={e => setForm({...form, date: e.target.value})} />
+            
+            <div style={{display: 'flex', gap: '5px', marginBottom: '15px'}}>
+              <button type="button" onClick={()=>setForm({...form, type:'income'})} className={`month-btn ${form.type==='income'?'active':''}`} style={{flex:1}}>GANHO</button>
+              <button type="button" onClick={()=>setForm({...form, type:'expense'})} className={`month-btn ${form.type==='expense'?'active':''}`} style={{flex:1}}>GASTO</button>
+              <button type="button" onClick={()=>setForm({...form, type:'fixed'})} className={`month-btn ${form.type==='fixed'?'active':''}`} style={{flex:1}}>FIXA</button>
+            </div>
+            <button type="submit" style={{width:'100%', padding:'15px', borderRadius:'12px', background:'var(--primary)', color:'white', border:'none', fontWeight:'800', cursor:'pointer'}}>Lançar Agora</button>
+          </form>
         </div>
       </aside>
 
-      {/* ÁREA DE VISUALIZAÇÃO PRINCIPAL */}
-      <main className="viewport">
-        <div className="summary-grid">
-          <div className="card" style={{borderLeftColor: 'var(--primary)'}}>
-            <h4>Saldo Disponível</h4>
-            <span className="value" style={{color: balance >= 0 ? 'var(--in)' : 'var(--out)'}}>R$ {balance.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>
+      <main className="content-area">
+        <header className="content-header">
+          <div>
+            <h1 style={{margin:0, fontSize:'36px'}}>Gestão de {MESES[selectedMonth]}</h1>
+            <p style={{color:'var(--text-gray)'}}>Visão geral do ano de {selectedYear}</p>
           </div>
-          <div className="card" style={{borderLeftColor: 'var(--in)'}}>
-            <h4>Total Recebido</h4>
-            <span className="value" style={{color: 'var(--in)'}}>R$ {totIn.toLocaleString('pt-BR')}</span>
+          <button onClick={exportPDF} className="btn-export">
+            <FileDown size={20} /> Exportar PDF
+          </button>
+        </header>
+
+        <section className="summary-cards">
+          <div className="card-pro" style={{background:'var(--primary)', color:'white'}}>
+            <span className="label-mini" style={{color:'rgba(255,255,255,0.7)'}}>Saldo Líquido</span>
+            <h2>R$ {balance.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</h2>
           </div>
-          <div className="card" style={{borderLeftColor: 'var(--out)'}}>
-            <h4>Total Gasto</h4>
-            <span className="value" style={{color: 'var(--out)'}}>R$ {(totOut + totFix).toLocaleString('pt-BR')}</span>
+          <div className="card-pro">
+            <span className="label-mini">Entradas Mensais</span>
+            <h2 style={{color:'var(--success)'}}>R$ {totIn.toLocaleString('pt-BR')}</h2>
           </div>
-        </div>
+          <div className="card-pro">
+            <span className="label-mini">Saídas Totais</span>
+            <h2 style={{color:'var(--danger)'}}>R$ {(totOut + totFix).toLocaleString('pt-BR')}</h2>
+          </div>
+        </section>
 
-        <div className="lists-grid">
-          {/* LISTA DE ENTRADAS */}
-          <section className="list-container">
-            <div className="list-header" style={{color: 'var(--in)'}}>
-              <h3><TrendingUp size={18} /> Ganhos e Entradas</h3>
-              <span>R$ {totIn.toLocaleString()}</span>
+        <div style={{display:'grid', gridTemplateColumns:'1fr 1.5fr', gap:'30px'}}>
+          <div className="card-pro">
+            <h4 style={{marginTop:0}}>Composição Mensal</h4>
+            <div style={{height: 250}}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={chartData}>
+                  <XAxis dataKey="name" hide />
+                  <Tooltip cursor={{fill:'transparent'}} />
+                  <Bar dataKey="v" radius={[10, 10, 10, 10]}>
+                    {chartData.map((e, idx) => <Cell key={idx} fill={e.c} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </div>
-            <div className="item-list">
-              {incomeItems.map(i => <Row key={i.id} i={i} onDel={removeItem} color="var(--in)" />)}
-            </div>
-          </section>
+          </div>
 
-          {/* LISTA DE GASTOS VARIÁVEIS */}
-          <section className="list-container">
-            <div className="list-header" style={{color: 'var(--out)'}}>
-              <h3><TrendingDown size={18} /> Gastos Variáveis</h3>
-              <span>R$ {totOut.toLocaleString()}</span>
+          <div className="history-card-pro">
+            <div style={{padding:'20px', borderBottom:'1px solid #eee', fontWeight:'bold'}}>Últimos Lançamentos</div>
+            <div style={{maxHeight:'400px', overflowY:'auto'}}>
+              {filteredData.length === 0 && <div style={{padding:'40px', textAlign:'center', color:'#999'}}>Sem dados.</div>}
+              {filteredData.map(i => (
+                <div key={i.id} className="row-item">
+                  <div>
+                    <div style={{fontWeight:700}}>{i.desc}</div>
+                    <div style={{fontSize:'11px', color:'#999'}}>{new Date(i.date).toLocaleDateString('pt-BR')}</div>
+                  </div>
+                  <div style={{display:'flex', alignItems:'center', gap:'15px'}}>
+                    <span style={{fontWeight:800, color: i.type==='income'?'var(--success)':'var(--danger)'}}>
+                      {i.type==='income'?'+':'-'} R$ {i.val.toLocaleString()}
+                    </span>
+                    <button onClick={()=>deleteItem(i.id)} style={{border:'none', background:'none', color:'#ccc', cursor:'pointer'}}><Trash2 size={16}/></button>
+                  </div>
+                </div>
+              ))}
             </div>
-            <div className="item-list">
-              {expenseItems.map(i => <Row key={i.id} i={i} onDel={removeItem} color="var(--out)" />)}
-            </div>
-          </section>
-
-          {/* LISTA DE CONTAS FIXAS */}
-          <section className="list-container" style={{gridColumn: 'span 2'}}>
-            <div className="list-header" style={{color: 'var(--fix)'}}>
-              <h3><Layers size={18} /> Compromissos e Contas Fixas</h3>
-              <span>Custo Fixo Total: R$ {totFix.toLocaleString()}</span>
-            </div>
-            <div className="item-list" style={{display: 'grid', gridTemplateColumns: '1fr 1fr'}}>
-              {fixedItems.map(i => <Row key={i.id} i={i} onDel={removeItem} color="var(--fix)" />)}
-            </div>
-          </section>
+          </div>
         </div>
       </main>
     </div>
   );
 }
-
-// Componente de Linha de Item
-const Row = ({ i, onDel, color }) => (
-  <div className="item">
-    <div className="item-info">
-      <b>{i.desc}</b>
-      <span>{i.date}</span>
-    </div>
-    <div style={{display: 'flex', alignItems: 'center', gap: '20px'}}>
-      <span className="item-val" style={{color: color}}>R$ {i.val.toLocaleString('pt-BR', {minimumFractionDigits: 2})}</span>
-      <button onClick={() => onDel(i.id)} className="btn-del" style={{background: 'none', border: 'none', color: '#d1d5db', cursor: 'pointer'}}><Trash2 size={18}/></button>
-    </div>
-  </div>
-);
 
 export default App;
